@@ -1,84 +1,120 @@
+using System.ComponentModel.DataAnnotations;
+using ConsoleApp1.Services;
+
 namespace ConsoleApp1.Models
 {
-    public class Member : Customer, SerializableObject<Member>
+    public class Member : SerializableObject<Member>
     {
-        public int IdMember { get; set; }
-        public string Email { get; set; }
-        public int CreditPoints { get; set; }
-        public static int CreditPointsRate { get; set; } = 10;
+        [Required(ErrorMessage = "Member ID is required.")]
+        [Range(1, int.MaxValue, ErrorMessage = "Member ID must be a positive integer.")]
+        public int IdMember { get; private set; }
 
-        // Constructor
-        public Member(int idPerson, string firstName, string lastName, DateTime birthOfDate, string phoneNumber, 
-                      int idCustomer, int idMember, string email, int creditPoints = 0)
-            : base(idPerson, firstName, lastName, birthOfDate, phoneNumber, idCustomer)
+        [EmailAddress(ErrorMessage = "Invalid email address format.")]
+        public string? Email { get; private set; }
+
+        [Range(0, int.MaxValue, ErrorMessage = "Credit points cannot be negative.")]
+        public int CreditPoints { get; private set; }
+
+        private static int _creditPointsRate = 10;
+
+        // Static Property for Credit Points Rate
+        public static int CreditPointsRate
         {
-            if (string.IsNullOrWhiteSpace(email))
-                throw new ArgumentException("Email Cannot Be Empty.");
-
-            if (creditPoints < 0)
-                throw new ArgumentException("Credit Points Cannot Be Negative.");
-
-
-            IdMember = idMember;
-            Email = email;
-            CreditPoints = creditPoints;
-            InstanceCollection.Add(this);
+            get => _creditPointsRate;
+            set
+            {
+                if (value <= 0)
+                    throw new ArgumentException("Credit points rate must be greater than zero.");
+                _creditPointsRate = value;
+            }
         }
 
-        // Method To Use Credit Points
-        public void UseCreditPoints(int points)
+        // Events for Logging Actions
+        public event Action<string>? OnCreditPointsUsed;
+        public event Action<string>? OnCreditPointsEarned;
+
+        // Constructor
+        public Member(int idMember, int initialCreditPoints = 0, string? email = null)
+        {
+            if (idMember <= 0)
+                throw new ArgumentException("Member ID must be a positive integer.", nameof(idMember));
+            if (initialCreditPoints < 0)
+                throw new ArgumentException("Initial credit points cannot be negative.", nameof(initialCreditPoints));
+
+            IdMember = idMember;
+            CreditPoints = initialCreditPoints;
+            Email = email;
+        }
+
+        // Method to Use Credit Points
+        public bool UseCreditPoints(int points)
         {
             if (points <= 0)
-            {
-                Console.WriteLine($"Invalid Points Value: {points}. Must Be Greater Than Zero.");
-                return;
-            }
+                throw new ArgumentException("Points must be greater than zero.", nameof(points));
 
             if (CreditPoints >= points)
             {
                 CreditPoints -= points;
-                Console.WriteLine($"{FirstName} {LastName} Used {points} Credit Points. Remaining: {CreditPoints}.");
+                OnCreditPointsUsed?.Invoke($"Used {points} credit points. Remaining: {CreditPoints}.");
+                return true;
             }
-            else
-            {
-                Console.WriteLine($"{FirstName} {LastName} Does Not Have Enough Credit Points. Current Balance: {CreditPoints}.");
-            }
+
+            return false;
         }
 
-        // Method To Earn Credit Points
+        // Method to Earn Credit Points
         public void EarnCreditPoints(int orderValue)
         {
             if (orderValue <= 0)
-            {
-                Console.WriteLine($"Invalid Order Value: {orderValue}. Must Be Greater Than Zero.");
-                return;
-            }
-
+                throw new ArgumentException("Order value must be greater than zero.", nameof(orderValue));
 
             int earnedPoints = orderValue / CreditPointsRate;
             CreditPoints += earnedPoints;
-            Console.WriteLine($"{FirstName} {LastName} Earned {earnedPoints} Credit Points. Total: {CreditPoints}");
+            OnCreditPointsEarned?.Invoke($"Earned {earnedPoints} credit points. Total: {CreditPoints}.");
+        }
+
+        public override string ToString()
+        {
+            return $"Member [ID: {IdMember}, Email: {Email}, Credit Points: {CreditPoints}]";
         }
     }
 
-    public class NonMember : Customer, SerializableObject<NonMember>
+    public class NonMember : SerializableObject<NonMember>
     {
-        // Constructor
-        public NonMember(int idPerson, string firstName, string lastName, DateTime birthOfDate, string phoneNumber, 
-                         int idCustomer)
-            : base(idPerson, firstName, lastName, birthOfDate, phoneNumber, idCustomer)
+        [Required(ErrorMessage = "NonMember ID is required.")]
+        [Range(1, int.MaxValue, ErrorMessage = "NonMember ID must be a positive integer.")]
+        public int Id { get; private set; }
+
+        private static readonly List<NonMember> NonMembersList = new();
+        public static IReadOnlyCollection<NonMember> NonMembers => NonMembersList.AsReadOnly();
+
+        public Member? ConvertedMember { get; private set; }
+
+        public NonMember(int id)
         {
-            InstanceCollection.Add(this);
+            if (id <= 0)
+                throw new ArgumentException("NonMember ID must be a positive integer.", nameof(id));
+
+            Id = id;
+            NonMembersList.Add(this);
         }
 
-        // Method To Become A Member
-        public Member BecomeMember(int idMember, string email)
+        // Method to Become a Member
+        public Member BecomeMember(int idMember, string? email = null)
         {
-            if (string.IsNullOrWhiteSpace(email))
-                throw new ArgumentException("Email Cannot Be Empty.");
+            if (idMember <= 0)
+                throw new ArgumentException("Member ID must be a positive integer.", nameof(idMember));
 
-            Console.WriteLine($"{FirstName} {LastName} Is Now A Member.");
-            return new Member(IdPerson, FirstName, LastName, BirthOfDate, PhoneNumber, IdCustomer, idMember, email);
+            var newMember = new Member(idMember, email: email);
+            Member.AddInstance(newMember);
+            ConvertedMember = newMember; 
+            NonMembersList.Remove(this);
+            return newMember;
+        }
+
+        public override string ToString()
+        {
+            return $"NonMember [ID: {Id}]";
         }
     }
 }

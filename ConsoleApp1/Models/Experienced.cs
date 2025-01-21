@@ -1,30 +1,63 @@
+using System.ComponentModel.DataAnnotations;
+using ConsoleApp1.Services;
+
 namespace ConsoleApp1.Models
 {
-    public class Experienced : Employee, SerializableObject<Experienced>
+    public class Experienced : SerializableObject<Experienced>
     {
-        public int YearsOfExperience { get; set; }
+        private static readonly List<Experienced> _experiencedExtent = new List<Experienced>();
+        public static IReadOnlyCollection<Experienced> ExperiencedExtent => _experiencedExtent.AsReadOnly();
+
+        [Required]
+        [Range(1, int.MaxValue, ErrorMessage = "Years of experience must be a positive integer.")]
+        public int YearsOfExperience { get; private set; }
+
+        public Guid AssociationId { get; private set; }
+
+        // Event for Logging
+        public event Action<string>? OnMentorshipStarted;
 
         // Constructor
-        public Experienced(int idPerson, string firstName, string lastName, DateTime birthOfDate, string phoneNumber,
-                           int idEmployee, WorkDetails workDetails, int yearsOfExperience, DateTime? dateOfLeaving = null)
-            : base(idPerson, firstName, lastName, birthOfDate, phoneNumber, idEmployee, workDetails, dateOfLeaving)
-            {
-                if (yearsOfExperience <= 0)
-                    throw new ArgumentException("Years Of Experience Must Be Negative.");
+        public Experienced(int yearsOfExperience)
+        {
+            if (yearsOfExperience <= 0)
+                throw new ArgumentException("Years of experience must be greater than zero.", nameof(yearsOfExperience));
 
+            YearsOfExperience = yearsOfExperience;
+            AssociationId = Guid.NewGuid();
 
-                YearsOfExperience = yearsOfExperience;
-                InstanceCollection.Add(this);
-            }
+            _experiencedExtent.Add(this);
+        }
 
-        // Method To Mentor A Trainee
+        // Method to Mentor a Trainee
         public void MentorTrainee(Trainee trainee)
         {
             if (trainee == null)
-                throw new ArgumentNullException("Trainee Cannot Be Null.");
+                throw new ArgumentNullException(nameof(trainee), "Trainee cannot be null.");
 
-                
-            Console.WriteLine($"Experienced {FirstName} {LastName} Is Mentoring Trainee {trainee.FirstName}.");
+            string message = $"Experienced mentor with {YearsOfExperience} years of experience is mentoring trainee.";
+            OnMentorshipStarted?.Invoke(message);
+        }
+
+        // Static Method to Clear Extent
+        public static void ClearExtent()
+        {
+            Console.WriteLine($"Clearing all {ExperiencedExtent.Count} experienced mentors.");
+            _experiencedExtent.Clear();
+        }
+
+        // Static Method to Remove Experienced Mentor
+        public static bool RemoveExperienced(Experienced experienced)
+        {
+            bool result = _experiencedExtent.Remove(experienced);
+            if (result)
+                Console.WriteLine($"Experienced mentor with {experienced.YearsOfExperience} years of experience removed.");
+            return result;
+        }
+
+        public override string ToString()
+        {
+            return $"Experienced [Years of Experience: {YearsOfExperience}, Association ID: {AssociationId}]";
         }
     }
 }

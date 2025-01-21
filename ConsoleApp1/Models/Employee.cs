@@ -1,102 +1,213 @@
+using ConsoleApp1.Services;
 using System.ComponentModel.DataAnnotations;
 
-namespace ConsoleApp1.Models{
-    public abstract class Employee : Person, SerializableObject<Employee>
+namespace ConsoleApp1.Models
+{
+    public abstract class Employee : SerializableObject<Employee>
     {
-        [Required(ErrorMessage = "Employee ID Is Required.")]
-        [Range(1, int.MaxValue, ErrorMessage = "Employee ID Must Be A Positive Integer.")]
-        public int IdEmployee { get; set; }
-        public WorkDetails WorkDetails { get; set; }
+        [Required(ErrorMessage = "Employee ID is required.")]
+        [Range(1, int.MaxValue, ErrorMessage = "Employee ID must be a positive integer.")]
+        public int IdEmployee { get; private set; }
+
+        public WorkDetails WorkDetails { get; private set; }
+
         [DataType(DataType.Date)]
-        public DateTime? DateOfLeaving { get; set; }
+        public DateTime? DateOfLeaving { get; private set; }
+
+        public Manager? Supervisor { get; private set; } // Reverse connection to Manager
 
         // Constructor
-        public Employee(int idPerson, string firstName, string lastName, DateTime birthOfDate, string phoneNumber, 
-                        int idEmployee, WorkDetails workDetails, DateTime? dateOfLeaving = null)
-            : base(idPerson, firstName, lastName, birthOfDate, phoneNumber)
+        public Employee(int idEmployee, WorkDetails workDetails, DateTime? dateOfLeaving = null)
         {
-            if (workDetails == null)
-                throw new ArgumentNullException("Work Details Cannot Be Null.");
-
+            ValidateNotNull(workDetails, nameof(workDetails));
 
             IdEmployee = idEmployee;
             WorkDetails = workDetails;
             DateOfLeaving = dateOfLeaving;
-            InstanceCollection.Add(this);
+
+            // Establish reverse connection
+            WorkDetails.LinkToEmployee(this);
         }
 
-        // Method To Set Date Of Leaving
-        public void setDateOfLeaving(DateTime dateOfLeaving)
+        // Method to set Date of Leaving
+        public void SetDateOfLeaving(DateTime dateOfLeaving)
         {
             if (dateOfLeaving < WorkDetails.DateOfHiring)
-                throw new ArgumentException("Date Of Leaving Cannot Be Before Date Of Hiring.");
+                throw new ArgumentException("Date of Leaving cannot be before Date of Hiring.");
 
             DateOfLeaving = dateOfLeaving;
-            Console.WriteLine($"Date Of Leaving Updated To: {DateOfLeaving}.");
+            Console.WriteLine($"Date of Leaving updated to: {DateOfLeaving}.");
         }
 
-        // Method To Get Total Employment Duration
+        // Method to update Work Details
+        public void UpdateWorkDetails(WorkDetails newWorkDetails)
+        {
+            ValidateNotNull(newWorkDetails, nameof(newWorkDetails));
+
+            // Unlink existing WorkDetails
+            WorkDetails.UnlinkFromEmployee();
+
+            // Link new WorkDetails
+            WorkDetails = newWorkDetails;
+            WorkDetails.LinkToEmployee(this);
+        }
+
+        // Method to set Supervisor
+        public void SetSupervisor(Manager manager)
+        {
+            if (Supervisor != null)
+                throw new InvalidOperationException("Employee already has a supervisor.");
+
+            Supervisor = manager;
+        }
+
+        // Method to remove Supervisor
+        public void RemoveSupervisor()
+        {
+            Supervisor = null;
+        }
+
+        // Method to get Total Employment Duration
         public int GetEmploymentDuration()
-        {   
+        {
             DateTime endDate = DateOfLeaving ?? DateTime.Now;
             return (endDate - WorkDetails.DateOfHiring).Days;
         }
 
-        public override string GetDetails()
+        public override string ToString()
         {
-            return $"Employee ID: {IdEmployee}\nName: {FirstName} {LastName}\nBirth Date: {BirthOfDate}\nDepartment: {WorkDetails.Department}";
+            return $"Employee [ID: {IdEmployee}, Work Details: {WorkDetails}, Date Of Leaving: {DateOfLeaving?.ToShortDateString() ?? "N/A"}, Supervisor: {Supervisor?.IdManager.ToString() ?? "None"}]";
+        }
+
+        private void ValidateNotNull(object value, string paramName)
+        {
+            if (value == null)
+                throw new ArgumentNullException(paramName);
         }
     }
 
+
+
     // Complex Attribute: WorkDetails
-    public class WorkDetails
+    public class WorkDetails : SerializableObject<WorkDetails>
     {
+        [Required]
+        [DataType(DataType.Date)]
         public DateTime DateOfHiring { get; private set; }
+
+        [Required]
+        [StringLength(100, ErrorMessage = "Department cannot exceed 100 characters.")]
         public string Department { get; private set; }
+
+        [Required]
+        [StringLength(50, ErrorMessage = "Shift schedule cannot exceed 50 characters.")]
         public string ShiftSchedule { get; private set; }
 
-        // Constructor
+        // Reverse connection to Trainees
+        private readonly List<Trainee> _trainees = new List<Trainee>();
+        public IReadOnlyCollection<Trainee> Trainees => _trainees.AsReadOnly();
+
+        // Reverse connection to Specialists
+        private readonly List<Specialist> _specialists = new List<Specialist>();
+        public IReadOnlyCollection<Specialist> Specialists => _specialists.AsReadOnly();
+
+        // Reverse connection to Employee
+        public Employee? AssociatedEmployee { get; private set; }
+
         public WorkDetails(DateTime dateOfHiring, string department, string shiftSchedule)
         {
             if (dateOfHiring > DateTime.Now)
-                throw new ArgumentException("Date Of Hiring Cannot Be In The Future.");
-            
+                throw new ArgumentException("Date of Hiring cannot be in the future.");
+
             if (string.IsNullOrWhiteSpace(department))
-                throw new ArgumentException("Department Cannot Be Empty.");
+                throw new ArgumentException("Department cannot be empty.");
 
             if (string.IsNullOrWhiteSpace(shiftSchedule))
-                throw new ArgumentException("Shift Schedule Cannot Be Empty.");
-
+                throw new ArgumentException("Shift Schedule cannot be empty.");
 
             DateOfHiring = dateOfHiring;
             Department = department;
             ShiftSchedule = shiftSchedule;
         }
 
-        // Method To Update Department
+        public void LinkToEmployee(Employee employee)
+        {
+            if (AssociatedEmployee != null)
+                throw new InvalidOperationException("WorkDetails is already linked to an Employee.");
+
+            AssociatedEmployee = employee;
+        }
+
+
+        public void UnlinkFromEmployee()
+        {
+            if (AssociatedEmployee == null)
+                throw new InvalidOperationException("WorkDetails is not linked to any Employee.");
+
+            AssociatedEmployee = null; 
+        }
+
+
+        public void AddTrainee(Trainee trainee)
+        {
+            if (!_trainees.Contains(trainee))
+            {
+                _trainees.Add(trainee);
+            }
+        }
+
+        public bool RemoveTrainee(Trainee trainee)
+        {
+            return _trainees.Remove(trainee);
+        }
+
+        public void AddSpecialist(Specialist specialist)
+        {
+            if (!_specialists.Contains(specialist))
+            {
+                _specialists.Add(specialist);
+            }
+        }
+
+        public bool RemoveSpecialist(Specialist specialist)
+        {
+            return _specialists.Remove(specialist);
+        }
+
         public void UpdateDepartment(string newDepartment)
         {
             if (string.IsNullOrWhiteSpace(newDepartment))
-                throw new ArgumentException("Department Cannot Be Empty.");
+                throw new ArgumentException("Department cannot be empty.");
 
             Department = newDepartment;
-            Console.WriteLine($"Department Updated To: {Department}.");
+            Console.WriteLine($"Department updated to: {Department}.");
         }
 
-        // Method To Update Shift Schedule
         public void UpdateShiftSchedule(string newShiftSchedule)
         {
             if (string.IsNullOrWhiteSpace(newShiftSchedule))
-                throw new ArgumentException("Shift Schedule Cannot Be Empty.");
+                throw new ArgumentException("Shift Schedule cannot be empty.");
 
             ShiftSchedule = newShiftSchedule;
-            Console.WriteLine($"Shift Schedule Updated To: {ShiftSchedule}.");
+            Console.WriteLine($"Shift Schedule updated to: {ShiftSchedule}.");
         }
 
-        // Method To Get Work Duration
+    
         public int GetWorkDuration()
         {
             return (DateTime.Now - DateOfHiring).Days;
+        }
+
+        public override string ToString()
+        {
+            return $"Date Of Hiring: {DateOfHiring}, Department: {Department}, Shift Schedule: {ShiftSchedule}, " +
+                   $"Employee: {(AssociatedEmployee != null ? AssociatedEmployee.IdEmployee.ToString() : "None")}, " +
+                   $"Trainees: {Trainees.Count}, Specialists: {Specialists.Count}";
+        }
+
+        public override int GetHashCode()
+        {
+            return HashCode.Combine(DateOfHiring, Department, ShiftSchedule);
         }
     }
 }

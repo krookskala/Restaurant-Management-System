@@ -1,76 +1,135 @@
+using ConsoleApp1.Services;
+using System.ComponentModel.DataAnnotations;
+
 namespace ConsoleApp1.Models
 {
-    public class Manager : Employee, SerializableObject<Manager>
+    public class Manager : SerializableObject<Manager>
     {
-        public string Level { get; set; }
-        public List<Employee> SupervisedEmployees { get; set; } = new List<Employee>();  // Reflexive Association
+        [Required(ErrorMessage = "Manager ID is required.")]
+        [Range(1, int.MaxValue, ErrorMessage = "Manager ID must be a positive integer.")]
+        public int IdManager { get; private set; } 
+
+        [Required(ErrorMessage = "Level is required.")]
+        public string Level { get; private set; } 
+
+        // Reflexive Association
+        public List<Employee> SupervisedEmployees { get; private set; } = new();
+
+        // Derived Attribute
+        public int SupervisedEmployeeCount => SupervisedEmployees.Count;
+
+        // Events for Supervised Employee Changes
+        public event Action<string>? OnSupervisedEmployeeAdded;
+        public event Action<string>? OnSupervisedEmployeeRemoved;
+
+        // Structured Logger Placeholder
+        private readonly Action<string> _logger;
 
         // Constructor
-        public Manager(int idPerson, string firstName, string lastName, DateTime birthOfDate, string phoneNumber, 
-                       int idEmployee, WorkDetails workDetails, string level, DateTime? dateOfLeaving = null)   
-            : base(idPerson, firstName, lastName, birthOfDate, phoneNumber, idEmployee, workDetails, dateOfLeaving)
+        public Manager(int idManager, string level, Action<string> logger = null!)
         {
+            if (idManager <= 0)
+                throw new ArgumentOutOfRangeException(nameof(idManager), "Manager ID must be a positive integer.");
+
             if (string.IsNullOrWhiteSpace(level))
-                throw new ArgumentException("Level Cannot Be Empty.");
+                throw new ArgumentException("Level cannot be null or empty.", nameof(level));
 
-
+            IdManager = idManager;
             Level = level;
-            InstanceCollection.Add(this);
+            _logger = logger ?? Console.WriteLine;
         }
 
-        // Method To Assign A Table To A Waiter
+        // Assign a Table to a Waiter
         public void AssignTableToWaiter(Waiter waiter, Table table)
         {
-            if (waiter == null || table == null)
-                throw new ArgumentNullException("Waiter And Table Cannot Be Null.");
+            if (waiter == null)
+                throw new ArgumentNullException(nameof(waiter), "Waiter cannot be null.");
 
-            waiter.AssignedTables.Add(table);
-            Console.WriteLine($"Manager {FirstName} Assigned Table {table.IdTable} To Waiter {waiter.IdWaiter}.");
+            if (table == null)
+                throw new ArgumentNullException(nameof(table), "Table cannot be null.");
+
+            waiter.AssignTable(table);
+            LogAction($"Manager {IdManager} assigned Table {table.IdTable} to Waiter {waiter.IdWaiter}.");
         }
 
-        // Method To Reassign A Table From One Waiter To Another
+        // Reassign a Table from one Waiter to another
         public void ReassignTableToWaiter(Waiter fromWaiter, Waiter toWaiter, Table table)
         {
-            if (fromWaiter == null || toWaiter == null || table == null)
-                throw new ArgumentNullException("Waiters And Table Cannot Be Null.");
+            if (fromWaiter == null)
+                throw new ArgumentNullException(nameof(fromWaiter), "Source Waiter cannot be null.");
 
-            if (fromWaiter.AssignedTables.Contains(table))
+            if (toWaiter == null)
+                throw new ArgumentNullException(nameof(toWaiter), "Target Waiter cannot be null.");
+
+            if (table == null)
+                throw new ArgumentNullException(nameof(table), "Table cannot be null.");
+
+            if (!fromWaiter.UnassignTable(table.IdTable))
             {
-                fromWaiter.AssignedTables.Remove(table);
-                toWaiter.AssignedTables.Add(table);
-                Console.WriteLine($"Manager {FirstName} Reassigned Table {table.IdTable} From Waiter {fromWaiter.IdWaiter} To Waiter {toWaiter.IdWaiter}.");
+                LogAction($"Table {table.IdTable} is not assigned to Waiter {fromWaiter.IdWaiter}.");
+                return;
             }
-            else
-            {
-                Console.WriteLine($"Table {table.IdTable} Is Not Assigned To Waiter {fromWaiter.IdWaiter}.");
-            }
+
+            toWaiter.AssignTable(table);
+            LogAction($"Manager {IdManager} reassigned Table {table.IdTable} from Waiter {fromWaiter.IdWaiter} to Waiter {toWaiter.IdWaiter}.");
         }
 
-        // Method To Add A Supervised Employee
+        // Add a Supervised Employee
         public void AddSupervisedEmployee(Employee employee)
         {
             if (employee == null)
-                throw new ArgumentNullException("Employee Cannot Be Null.");
-
-            SupervisedEmployees.Add(employee);
-            Console.WriteLine($"Manager {FirstName} Is Now Supervising {employee.FirstName} {employee.LastName}.");
-        }
-
-        // Method To Remove A Supervised Employee
-        public void RemoveSupervisedEmployee(Employee employee)
-        {
-            if (employee == null)
-                throw new ArgumentNullException("Employee Cannot Be Null.");
+                throw new ArgumentNullException(nameof(employee), "Employee cannot be null.");
 
             if (SupervisedEmployees.Contains(employee))
             {
-                SupervisedEmployees.Remove(employee);
-                Console.WriteLine($"Manager {FirstName} Is No Longer Supervising {employee.FirstName} {employee.LastName}.");
+                LogAction($"Employee {employee.IdEmployee} is already supervised by Manager {IdManager}.");
+                return;
             }
-            else
+
+            employee.SetSupervisor(this);
+            SupervisedEmployees.Add(employee);
+            OnSupervisedEmployeeAdded?.Invoke($"Employee {employee.IdEmployee} added under Manager {IdManager}.");
+            LogAction($"Manager {IdManager} is now supervising Employee {employee.IdEmployee}.");
+        }
+
+        // Remove a Supervised Employee
+        public void RemoveSupervisedEmployee(Employee employee)
+        {
+            if (employee == null)
+                throw new ArgumentNullException(nameof(employee), "Employee cannot be null.");
+
+            if (!SupervisedEmployees.Remove(employee))
             {
-                Console.WriteLine($"{employee.FirstName} {employee.LastName} Is Not Supervised By {FirstName}.");
+                LogAction($"Employee {employee.IdEmployee} is not supervised by Manager {IdManager}.");
+                return;
             }
+
+            employee.RemoveSupervisor();
+            OnSupervisedEmployeeRemoved?.Invoke($"Employee {employee.IdEmployee} removed from Manager {IdManager}.");
+            LogAction($"Manager {IdManager} is no longer supervising Employee {employee.IdEmployee}.");
+        }
+
+        private void LogAction(string message)
+        {
+            _logger.Invoke(message);
+        }
+
+        public override string ToString()
+        {
+            return $"Manager ID: {IdManager}, Level: {Level}, Supervised Employees: {SupervisedEmployeeCount}";
+        }
+
+        public override bool Equals(object? obj)
+        {
+            if (obj is Manager other)
+                return IdManager == other.IdManager && Level == other.Level && SupervisedEmployees.SequenceEqual(other.SupervisedEmployees);
+
+            return false;
+        }
+
+        public override int GetHashCode()
+        {
+            return HashCode.Combine(IdManager, Level, SupervisedEmployeeCount);
         }
     }
 }

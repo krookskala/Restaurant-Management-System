@@ -1,26 +1,56 @@
-namespace ConsoleApp1.Models 
+using ConsoleApp1.Services;
+
+namespace ConsoleApp1.Models
 {
-    public class Specialist : Employee, SerializableObject<Specialist>
+    public class Specialist : SerializableObject<Specialist>
     {
-        public string FieldOfExpertise { get; set; }
+        private static readonly List<Specialist> _specialistExtent = new List<Specialist>();
+        public static IReadOnlyCollection<Specialist> SpecialistExtent => _specialistExtent.AsReadOnly();
+
+        public string FieldOfExpertise { get; private set; }
+        public Guid AssociationId { get; private set; } // Unique identifier for association
+
+        // Event for logging when a new recipe is designed
+        public event Action<string>? OnRecipeDesigned;
 
         // Constructor
-        public Specialist(int idPerson, string firstName, string lastName, DateTime birthOfDate, string phoneNumber,
-                          int idEmployee, WorkDetails workDetails, string fieldOfExpertise, DateTime? dateOfLeaving = null)
-            : base(idPerson, firstName, lastName, birthOfDate, phoneNumber, idEmployee, workDetails, dateOfLeaving)
+        public Specialist(string fieldOfExpertise)
         {
             if (string.IsNullOrWhiteSpace(fieldOfExpertise))
-                throw new ArgumentException("Field Of Expertise Cannot Be Empty.");
-
+                throw new ArgumentException("Field Of Expertise cannot be empty.");
 
             FieldOfExpertise = fieldOfExpertise;
-            InstanceCollection.Add(this);
+            AssociationId = Guid.NewGuid();
+            _specialistExtent.Add(this);
         }
 
-        // Method To Design A New Recipes
+        // Method to design new recipes
         public void DesignNewRecipes()
         {
-            Console.WriteLine($"Specialist {FirstName} {LastName} Is Designing New Recipes In The Field of {FieldOfExpertise}.");
+            string message = $"Specialist in {FieldOfExpertise} is designing new recipes.";
+            OnRecipeDesigned?.Invoke(message);
+        }
+
+        // Static method to clear extent
+        public static void ClearExtent()
+        {
+            Console.WriteLine($"Clearing all {SpecialistExtent.Count} specialists.");
+            _specialistExtent.Clear();
+        }
+
+        // Static method to remove a specialist
+        public static bool RemoveSpecialist(Specialist specialist)
+        {
+            bool result = _specialistExtent.Remove(specialist);
+            if (result)
+                Console.WriteLine($"Specialist with expertise in {specialist.FieldOfExpertise} removed.");
+            return result;
+        }
+
+        // Override ToString 
+        public override string ToString()
+        {
+            return $"Specialist [Field Of Expertise: {FieldOfExpertise}, Association ID: {AssociationId}]";
         }
     }
 }

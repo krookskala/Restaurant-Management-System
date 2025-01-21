@@ -1,70 +1,128 @@
+using ConsoleApp1.Services;
+using System.ComponentModel.DataAnnotations;
+
 namespace ConsoleApp1.Models
 {
     public class Restaurant : SerializableObject<Restaurant>
     {
-        public string Name { get; set; }    
-        public int MaxCapacity { get; set; }    
-        public List<Table> Tables { get; set; } = new List<Table>();  // Aggregation with Table
+        // Static Collection for Extent Management
+        private static readonly List<Restaurant> _restaurantExtent = new List<Restaurant>();
+        public static IReadOnlyCollection<Restaurant> RestaurantExtent => _restaurantExtent.AsReadOnly();
+
+        [Required(ErrorMessage = "Restaurant name is required.")]
+        [StringLength(100, MinimumLength = 2, ErrorMessage = "Restaurant name must be between 2 and 100 characters.")]
+        public string Name { get; private set; }
+
+        [Range(1, int.MaxValue, ErrorMessage = "Max capacity must be a positive integer.")]
+        public int MaxCapacity { get; private set; }
+
+        private readonly List<Table> _tables = new();
+        public IReadOnlyList<Table> Tables => _tables.AsReadOnly();
+
+        // Derived Attribute
+        public int AvailableCapacity => MaxCapacity - _tables.Count;
+
+        // Events for Logging
+        public event Action<string>? OnTableAdded;
+        public event Action<string>? OnTableRemoved;
 
         // Constructor
         public Restaurant(string name, int maxCapacity)
         {
             if (string.IsNullOrWhiteSpace(name))
-                throw new ArgumentException("Restaurant Name Cannot Be Empty.");
+                throw new ArgumentException("Restaurant Name Cannot Be Empty.", nameof(name));
+
             if (maxCapacity <= 0)
-                throw new ArgumentException("Max Capacity Must Be Greater Than Zero.");
+                throw new ArgumentException("Max Capacity Must Be Greater Than Zero.", nameof(maxCapacity));
 
             Name = name;
             MaxCapacity = maxCapacity;
-            InstanceCollection.Add(this);
+            _restaurantExtent.Add(this); 
         }
 
-        // Method To Get The Number Of Tables
+        // Method to Get the Number of Tables
         public int GetNumberOfTables()
         {
-            return Tables.Count;
+            return _tables.Count;
         }
 
-        // Method To Add A Table
+        // Method to Add a Table
         public void AddTable(Table table)
         {
             if (table == null)
-                throw new ArgumentNullException("Table Cannot Be Null.");
+                throw new ArgumentNullException(nameof(table), "Table cannot be null.");
 
-            int currentCapacity = GetCurrentCapacity();
-            if (currentCapacity + table.Capacity > MaxCapacity)
-                throw new InvalidOperationException("Adding This Table Exceeds The Restaurant's Maximum Capactiy.");
-            
-            Tables.Add(table);
-            Console.WriteLine($"Table {table.IdTable} Added To {Name}.");
+            if (_tables.Count >= MaxCapacity)
+                throw new InvalidOperationException($"Cannot add more tables. Max capacity of {MaxCapacity} reached.");
+
+            if (_tables.Any(t => t.IdTable == table.IdTable))
+                throw new InvalidOperationException($"Table with ID {table.IdTable} already exists.");
+
+            _tables.Add(table);
+            OnTableAdded?.Invoke($"Table {table.IdTable} added to restaurant {Name}.");
         }
 
-        // Method To Remove A Table
+        // Method to Remove a Table
         public void RemoveTable(Table table)
         {
             if (table == null)
-                throw new ArgumentNullException("Table Cannot Be Null.");
+                throw new ArgumentNullException(nameof(table), "Table cannot be null.");
 
-            if (Tables.Contains(table))
+            if (_tables.Remove(table))
             {
-                Tables.Remove(table);
-                Console.WriteLine($"Table {table.IdTable} Removed From {Name}.");
+                OnTableRemoved?.Invoke($"Table {table.IdTable} removed from restaurant {Name}.");
             }
             else
             {
-                Console.WriteLine($"Table {table.IdTable} Does Not Exist In {Name}.");
+                throw new InvalidOperationException($"Table {table.IdTable} does not exist in restaurant {Name}.");
             }
-        }       
+        }
 
-        // Method To Get The Current Capacity
+        // Method to Get the Current Capacity
         public int GetCurrentCapacity()
         {
-            int totalChairs = 0;
-            foreach (var table in Tables)
+            return _tables.Sum(t => t.NumberOfChairs);
+        }
+
+        // Static Method to Clear Extent
+        public static void ClearExtent()
+        {
+            _restaurantExtent.Clear();
+        }
+
+        // Static Method to Remove a Restaurant
+        public static bool RemoveRestaurant(Restaurant restaurant)
+        {
+            return _restaurantExtent.Remove(restaurant);
+        }
+
+         public IEnumerable<Reservation> GetReservations()
+         {
+         return Tables.SelectMany(table => table.Reservations);
+         }
+
+        public Table? GetMostReservedTable()
+        {
+        return Tables.OrderByDescending(table => table.Reservations.Count).FirstOrDefault();
+        }
+
+        public override bool Equals(object? obj)
+        {
+            if (obj is Restaurant other)
             {
-                totalChairs += table.NumberOfChairs;
+                return Name == other.Name && MaxCapacity == other.MaxCapacity;
             }
-            return totalChairs;
-        } 
+            return false;
+        }
+
+        public override int GetHashCode()
+        {
+            return HashCode.Combine(Name, MaxCapacity);
+        }
+
+        public override string ToString()
+        {
+            return $"Restaurant [Name: {Name}, Max Capacity: {MaxCapacity}, Tables Count: {GetNumberOfTables()}, Available Capacity: {AvailableCapacity}]";
+        }
     }
 }
